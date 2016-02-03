@@ -1,0 +1,23 @@
+# The `logstash` container is a simple logstash instance that accepts
+# JSON encoded log messages on TLS TCP port 4000.
+logstash:
+  build: ./docker/logstash
+  ports:
+    - "4000:4000"
+  volumes:
+    - ./fixtures/certs:/etc/certs
+
+# the 'logger' container is a fedora-22 image with systemd running
+# as the init process, along with systemd-journald and our
+# journal-2-logstash instance. It ships log messages from the journal
+# to the `logstash` container via TLS TCP port 4000
+logger:
+  build: ./docker/logger
+  # tty needed to see systemd/journald's /dev/console output
+  tty: true
+  privileged: true
+  volumes:
+    - ..:/src
+    - ./fixtures/certs:/etc/certs
+  links:
+    - logstash

@@ -1,0 +1,6 @@
+vendor/**
+!vendor/manifest
+journal-2-logstash
+coverage.out
+tmp
+.attic

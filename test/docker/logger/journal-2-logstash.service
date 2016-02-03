@@ -1,0 +1,25 @@
+[Unit]
+Description=Journal 2 Logstash shipper
+
+[Service]
+# send this service's output to the console instead of the journal to avoid a logging loop.
+StandardOutput=tty
+StandardError=tty
+
+Environment=JOURNAL2LOGSTASH_URL=logstash:4000
+Environment=JOURNAL2LOGSTASH_DEBUG=true
+Environment=JOURNAL2LOGSTASH_SOCKET=/run/systemd-journal-gatewayd.sock
+Environment=JOURNAL2LOGSTASH_STATE_FILE=/etc/journal2logstash.state
+
+# TLS keys and certs are not included in the container and should be mounted
+# into /etc/certs at runtime.
+Environment=JOURNAL2LOGSTASH_TLS_KEY=/etc/certs/logger.key
+Environment=JOURNAL2LOGSTASH_TLS_CERT=/etc/certs/logger.crt
+Environment=JOURNAL2LOGSTASH_TLS_CA=/etc/certs/ca.crt
+
+ExecStart=/src/journal-2-logstash
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
