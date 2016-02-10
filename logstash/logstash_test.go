@@ -41,8 +41,8 @@ func setup(t *testing.T) {
 	var err error
 
 	// setup mock logstash TLS (basic tcp socket) server
-	serverTlsConfig, err := makeTlsConfigFromFiles("../test/fixtures/certs/server.key",
-		"../test/fixtures/certs/server.crt",
+	serverTlsConfig, err := makeTlsConfigFromFiles("../test/fixtures/certs/logstash.key",
+		"../test/fixtures/certs/logstash.crt",
 		"../test/fixtures/certs/ca.crt")
 	assert.Nil(t, err)
 	server, err = tlstest.NewServer(serverTlsConfig)
@@ -50,8 +50,8 @@ func setup(t *testing.T) {
 
 	// setup logstash tls client
 	client, err = NewClient(server.Address(),
-		"../test/fixtures/certs/client.key",
-		"../test/fixtures/certs/client.crt",
+		"../test/fixtures/certs/logger.key",
+		"../test/fixtures/certs/logger.crt",
 		"../test/fixtures/certs/ca.crt")
 	assert.Nil(t, err)
 	assert.NotNil(t, client)

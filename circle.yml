@@ -1,0 +1,19 @@
+test:
+  override:
+    - make test
+    ## set COVERALLS_TOKEN environment variable on circleci.com
+    - make coveralls
+
+deployment:
+    production:
+        branch:
+          - master
+          - deploy
+        commands:
+          - gem install package_cloud --no-rdoc --no-ri
+          ## build
+          - make rpm
+          ## packagecloud.io yum repos require a distro/version, so we push this rpm to multiple repos:
+          ## set PACKAGECLOUD_TOKEN environment variable on circleci.com
+          - package_cloud push pantheon/internal/fedora/20 ./*.rpm
+          - package_cloud push pantheon/internal/fedora/22 ./*.rpm
