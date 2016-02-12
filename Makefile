@@ -4,6 +4,9 @@ APP=journal-2-logstash
 
 all: deps test $(APP)
 
+list:
+	@make -rqp | awk -F':' '/^[a-zA-Z0-9][^$$#\/\t=]*:([^=]|$$)/ {split($$1,A,/ /);for(i in A)print A[i]}' | sort | uniq
+
 # deps
 deps: gvt_install
 		gvt rebuild
@@ -29,14 +32,17 @@ cov_html: cov
 update_test_certs:
 	cd test/fixtures && ./mk-test-certs.sh
 
-# docker-compose demo / integration-y test cmds
-demo_up: $(APP)
+# docker demo commands
+docker_up: $(APP)
 	docker-compose -f test/docker-compose.yml build
 	docker-compose -f test/docker-compose.yml up
 
-demo_cleanup:
-	docker-compose -f test/docker-compose.yml stop
-	docker-compose -f test/docker-compose.yml rm --force
+docker_cleanup:
+	docker-compose -f test/docker-compose.yml down
+
+# usage:  echo "hello there" | make demo_log
+docker_log:
+	@docker exec -i test_logger_1 "systemd-cat"
 
 # build / compile
 clean:
@@ -46,6 +52,7 @@ $(APP): *.go */*.go
 #	CGO_ENABLED=0 go build -a .
 	CGO_ENABLED=0 GOOS=linux go build -a .
 
+# package/deploy
 rpm: $(APP)
 	bash deploy/build-rpm.sh
 
