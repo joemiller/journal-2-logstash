@@ -86,7 +86,7 @@ Filtering rules convert journald's JSON format into Logstash JSON format.
 ```
 input {
     tcp {
-			port => "4001"
+			port => "4000"
 			codec => "json"
 			ssl_enable => "true"
 			ssl_key => "/path/to/server.pem"
@@ -146,7 +146,7 @@ Requirements:
 Included in the repo is a `docker-compose.yml` in the `test/` directory that
 will spinup two containers:
 
-1. `logger' a fedora container running systemd as pid 1 and systemd-journald,
+1. `logger` a fedora container running systemd as pid 1 and systemd-journald,
     systemd-journal-gatewayd, and the journal-2-logstash binary running.
 2. `logstash` a logstash server instance configured to listen for JSON over
    TLS from the `logger` container.
