@@ -5,6 +5,9 @@ import (
 	"crypto/x509"
 	"errors"
 	"io/ioutil"
+	"log"
+
+	"github.com/cenkalti/backoff"
 )
 
 type Client struct {
@@ -47,7 +50,18 @@ func (c *Client) Write(b []byte) (int, error) {
 
 func (c *Client) connect() error {
 	c.Close()
-	conn, err := tls.Dial("tcp", c.url, c.config)
+	var err error
+	conn := &tls.Conn{}
+
+	operation := func() error {
+		conn, err = tls.Dial("tcp", c.url, c.config)
+		if err != nil {
+			log.Printf("Error connecting to logstash: %s", err)
+		}
+		return err
+	}
+
+	err = backoff.Retry(operation, backoff.NewExponentialBackOff())
 	if err != nil {
 		return err
 	}
@@ -65,9 +79,7 @@ func (c *Client) write(b []byte) (int, error) {
 	return c.conn.Write(b)
 }
 
-// @TODO(joe): should we implement a more advanced retry system or
-//             is it sufficient to exit on failure and let the supervisor
-//             restart us at the last position?
+// TODO: we have a retry in the connect() func, should we also retry in the write path?
 func (c *Client) writeAndRetry(b []byte) (int, error) {
 	if c.conn != nil {
 		if n, err := c.write(b); err == nil {
