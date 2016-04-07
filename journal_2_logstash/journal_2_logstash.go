@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"log"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/pantheon-systems/journal-2-logstash/journal"
@@ -33,21 +32,19 @@ type JournalShipper struct {
 	journal       *journal.Journal // TODO: rename this to journal.Follower() ?
 	logstash      *logstash.Client
 	lastMessage   []byte
-	stopCh        chan bool
-	wg            *sync.WaitGroup
+	msgsRecvd     int
+	msgsSent      int
 }
 
 func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 	s := &JournalShipper{
 		JournalShipperConfig: cfg,
-		stopCh:               make(chan bool),
-		wg:                   &sync.WaitGroup{},
 	}
 
 	// load "last-sent" cursor from state file, if available
 	cursor, err := readStateFile(s.StateFile)
 	if cursor != "" {
-		log.Printf("Loaded cursor: %s\n", cursor)
+		log.Printf("Loaded cursor: %s from %s\n", cursor, s.StateFile)
 	} else {
 		log.Printf("Could not load cursor (%v). Will start reading from 'last boot time'.\n", err)
 	}
@@ -94,7 +91,7 @@ func (s *JournalShipper) saveCursor() error {
 		return fmt.Errorf("Unable to get cursor from most recent log message.")
 	}
 
-	fmt.Printf("Saving cursor: %v\n", cursor)
+	log.Printf("Saving cursor: %v to %s\n", cursor, s.StateFile)
 	if err := writeStateFile(s.StateFile, cursor); err != nil {
 		return fmt.Errorf("Unable to write to state file: %s", err.Error())
 	}
@@ -102,36 +99,37 @@ func (s *JournalShipper) saveCursor() error {
 	return nil
 }
 
-func (s *JournalShipper) Run() {
-	s.wg.Add(1)
-	defer s.wg.Done()
+func (s *JournalShipper) printStats() {
+	log.Printf("Messages received/sent: %d/%d\n", s.msgsRecvd, s.msgsSent)
+}
 
+func (s *JournalShipper) Run() error {
 	logsCh, err := s.journal.Follow()
 	if err != nil {
-		log.Fatalf("Error reading from systemd-journal-gatewayd: %s", err.Error())
+		return fmt.Errorf("Error reading from systemd-journal-gatewayd: %s", err.Error())
 	}
 
+	// loop forever receiving messages from s-j-gatewayd and relaying them to logstash
+	// return with error if we lose connection to the gateway or run into errors sending to logstash
 	for {
 		select {
-		case <-s.stopCh:
-			return
 		case s.lastMessage = <-logsCh:
+			s.msgsRecvd++
 			if s.Debug {
-				log.Printf("[DEBUG] Received from journal: %s\n", s.lastMessage)
+				fmt.Printf("[DEBUG] Received from journal: %s\n", s.lastMessage)
+			}
+			// channel is closed, we're done
+			if len(s.lastMessage) == 0 {
+				return fmt.Errorf("systemd-journal-gatewayd connection closed.")
 			}
 			if _, err := s.logstash.Write(s.lastMessage); err != nil {
-				log.Fatal(err)
+				return fmt.Errorf("Error writing to logstash: %s\n", err)
 			}
+			s.msgsSent++
 			if time.Since(s.lastStateSave).Seconds() > SAVE_INTERVAL {
 				s.saveCursor()
+				s.printStats()
 			}
 		}
 	}
-}
-
-func (s *JournalShipper) Stop() {
-	log.Printf("Shutting down journal shipper")
-	close(s.stopCh)
-	s.wg.Wait()
-	s.saveCursor()
 }
