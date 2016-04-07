@@ -60,7 +60,6 @@ func (c *Client) connect() error {
 		}
 		return err
 	}
-
 	err = backoff.Retry(operation, backoff.NewExponentialBackOff())
 	if err != nil {
 		return err

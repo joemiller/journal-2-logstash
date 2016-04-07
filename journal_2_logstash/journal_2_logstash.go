@@ -47,6 +47,7 @@ type journalMetrics struct {
 func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 	m := newMetrics()
 	s := &JournalShipper{
+		lastStateSave:        time.Now(),
 		JournalShipperConfig: cfg,
 		journalMetrics:       m,
 	}
@@ -54,7 +55,7 @@ func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 	// load "last-sent" cursor from state file, if available
 	cursor, err := readStateFile(s.StateFile)
 	if cursor != "" {
-		log.Printf("Loaded cursor: %s from %s", cursor, s.StateFile)
+		log.Printf("Loaded cursor from %s: %s", s.StateFile, cursor)
 	} else {
 		log.Printf("Could not load cursor (%v). Will start reading from 'last boot time'.", err)
 	}
@@ -128,7 +129,7 @@ func (s *JournalShipper) saveCursor() error {
 		return fmt.Errorf("Unable to get cursor from most recent log message.")
 	}
 
-	log.Printf("Saving cursor: %v to %s\n", cursor, s.StateFile)
+	log.Printf("Saving cursor to %s: %v", s.StateFile, cursor)
 	if err := writeStateFile(s.StateFile, cursor); err != nil {
 		return fmt.Errorf("Unable to write to state file: %s", err.Error())
 	}
@@ -149,14 +150,14 @@ func (s *JournalShipper) Run() error {
 		case s.lastMessage = <-logsCh:
 			s.msgsRecvd.Inc(1)
 			if s.Debug {
-				fmt.Printf("[DEBUG] Received from journal: %s\n", s.lastMessage)
+				log.Printf("[DEBUG] Received from journal: %s", s.lastMessage)
 			}
 			// channel is closed, we're done
 			if len(s.lastMessage) == 0 {
-				return fmt.Errorf("systemd-journal-gatewayd connection closed.")
+				return fmt.Errorf("lost connection to systemd-journal-gatewayd")
 			}
 			if _, err := s.logstash.Write(s.lastMessage); err != nil {
-				return fmt.Errorf("Error writing to logstash: %s\n", err)
+				return fmt.Errorf("Error writing to logstash: %s", err)
 			}
 			s.msgsSent.Inc(1)
 			if time.Since(s.lastStateSave).Seconds() > SAVE_INTERVAL {
