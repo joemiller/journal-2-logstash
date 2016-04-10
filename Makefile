@@ -54,7 +54,7 @@ build_osx: *.go */*.go ## build OSX binary
 	CGO_ENABLED=0 GOOS=darwin go build -a .
 
 # package/deploy
-build_rpm: $(APP) ## build rpm
+build_rpm: build_linux ## build rpm
 	bash scripts/build-rpm.sh
 
 help: ## print list of tasks and descriptions
