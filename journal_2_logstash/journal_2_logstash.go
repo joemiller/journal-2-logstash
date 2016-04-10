@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
+	"os"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/pantheon-systems/journal-2-logstash/journal"
 	"github.com/pantheon-systems/journal-2-logstash/logstash"
+	"github.com/rcrowley/go-metrics"
 )
 
 var (
@@ -18,13 +20,14 @@ var (
 )
 
 type JournalShipperConfig struct {
-	Debug     bool
-	StateFile string
-	Socket    string
-	Url       string
-	Key       string
-	Cert      string
-	Ca        string
+	Debug       bool
+	StateFile   string
+	Socket      string
+	Url         string
+	Key         string
+	Cert        string
+	Ca          string
+	GraphiteUrl string
 }
 
 type JournalShipper struct {
@@ -33,23 +36,28 @@ type JournalShipper struct {
 	journal       *journal.Journal // TODO: rename this to journal.Follower() ?
 	logstash      *logstash.Client
 	lastMessage   []byte
-	stopCh        chan bool
-	wg            *sync.WaitGroup
+	journalMetrics
+}
+
+type journalMetrics struct {
+	msgsRecvd metrics.Counter
+	msgsSent  metrics.Counter
 }
 
 func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
+	m := newMetrics()
 	s := &JournalShipper{
+		lastStateSave:        time.Now(),
 		JournalShipperConfig: cfg,
-		stopCh:               make(chan bool),
-		wg:                   &sync.WaitGroup{},
+		journalMetrics:       m,
 	}
 
 	// load "last-sent" cursor from state file, if available
 	cursor, err := readStateFile(s.StateFile)
 	if cursor != "" {
-		log.Printf("Loaded cursor: %s\n", cursor)
+		log.Printf("Loaded cursor from %s: %s", s.StateFile, cursor)
 	} else {
-		log.Printf("Could not load cursor (%v). Will start reading from 'last boot time'.\n", err)
+		log.Printf("Could not load cursor (%v). Will start reading from 'last boot time'.", err)
 	}
 
 	// open the journal
@@ -64,7 +72,30 @@ func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 		return nil, fmt.Errorf("Error connecting to logstash: %s", err.Error())
 	}
 
+	// setup periodic metric logging to stderr
+	go metrics.Log(metrics.DefaultRegistry, 60*time.Second, log.New(os.Stderr, "metrics: ", log.Lmicroseconds))
+
+	// also send metrics to graphite if a GraphiteUrl config option was specified
+	if cfg.GraphiteUrl != "" {
+		addr, err := net.ResolveTCPAddr("tcp", cfg.GraphiteUrl)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid graphite-url: %s: %s", addr, err)
+		}
+		// TODO: we're going to need hostnames on these metrics since this agent will run on a lot of nodes.
+		//go graphite.Graphite(metrics.DefaultRegistry, 60*time.Second, "journal-2-logstash", addr)
+	}
+
 	return s, nil
+}
+
+func newMetrics() journalMetrics {
+	m := journalMetrics{
+		msgsRecvd: metrics.NewCounter(),
+		msgsSent:  metrics.NewCounter(),
+	}
+	metrics.Register("messages_received", m.msgsRecvd)
+	metrics.Register("messages_sent", m.msgsSent)
+	return m
 }
 
 func readStateFile(stateFile string) (string, error) {
@@ -76,6 +107,9 @@ func writeStateFile(stateFile string, cursor string) error {
 	return ioutil.WriteFile(stateFile, []byte(cursor), 0644)
 }
 
+// takes a raw json message representing a log record for s-j-gatewayd and extracts the '__CURSOR' record
+// using a regex match. We use a regex to avoid having to unmarshal the JSON and re-marshal it before sending
+// on to logstash
 func cursorFromRawMessage(log []byte) string {
 	cursor := cursorRegex.FindStringSubmatch(string(log))
 	if len(cursor) > 0 {
@@ -84,6 +118,7 @@ func cursorFromRawMessage(log []byte) string {
 	return ""
 }
 
+// persist the last read cursor to the state file
 func (s *JournalShipper) saveCursor() error {
 	if len(s.lastMessage) == 0 {
 		return nil
@@ -94,7 +129,7 @@ func (s *JournalShipper) saveCursor() error {
 		return fmt.Errorf("Unable to get cursor from most recent log message.")
 	}
 
-	fmt.Printf("Saving cursor: %v\n", cursor)
+	log.Printf("Saving cursor to %s: %v", s.StateFile, cursor)
 	if err := writeStateFile(s.StateFile, cursor); err != nil {
 		return fmt.Errorf("Unable to write to state file: %s", err.Error())
 	}
@@ -102,36 +137,32 @@ func (s *JournalShipper) saveCursor() error {
 	return nil
 }
 
-func (s *JournalShipper) Run() {
-	s.wg.Add(1)
-	defer s.wg.Done()
-
+func (s *JournalShipper) Run() error {
 	logsCh, err := s.journal.Follow()
 	if err != nil {
-		log.Fatalf("Error reading from systemd-journal-gatewayd: %s", err.Error())
+		return fmt.Errorf("Error reading from systemd-journal-gatewayd: %s", err.Error())
 	}
 
+	// loop forever receiving messages from s-j-gatewayd and relaying them to logstash
+	// return with error if we lose connection to the gateway or run into errors sending to logstash
 	for {
 		select {
-		case <-s.stopCh:
-			return
 		case s.lastMessage = <-logsCh:
+			s.msgsRecvd.Inc(1)
 			if s.Debug {
-				log.Printf("[DEBUG] Received from journal: %s\n", s.lastMessage)
+				log.Printf("[DEBUG] Received from journal: %s", s.lastMessage)
+			}
+			// channel is closed, we're done
+			if len(s.lastMessage) == 0 {
+				return fmt.Errorf("lost connection to systemd-journal-gatewayd")
 			}
 			if _, err := s.logstash.Write(s.lastMessage); err != nil {
-				log.Fatal(err)
+				return fmt.Errorf("Error writing to logstash: %s", err)
 			}
+			s.msgsSent.Inc(1)
 			if time.Since(s.lastStateSave).Seconds() > SAVE_INTERVAL {
 				s.saveCursor()
 			}
 		}
 	}
-}
-
-func (s *JournalShipper) Stop() {
-	log.Printf("Shutting down journal shipper")
-	close(s.stopCh)
-	s.wg.Wait()
-	s.saveCursor()
 }

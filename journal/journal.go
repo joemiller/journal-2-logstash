@@ -80,6 +80,8 @@ func (j *Journal) Follow() (<-chan []byte, error) {
 		if err := scanner.Err(); err != nil {
 			log.Println(err.Error())
 		}
+		close(logs)
+		return
 	}()
 	return logs, nil
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"os"
-	"os/signal"
 
 	"github.com/jessevdk/go-flags"
 	"github.com/pantheon-systems/journal-2-logstash/journal_2_logstash"
@@ -29,17 +28,6 @@ func parseArgs(args []string) (*options, error) {
 	return opts, nil
 }
 
-func waitShutdown() {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, os.Kill)
-
-	select {
-	case signal := <-sigChan:
-		log.Printf("Received signal: %s, shutting down.", signal)
-		return
-	}
-}
-
 func main() {
 	opts, err := parseArgs(os.Args)
 	if err != nil {
@@ -57,10 +45,11 @@ func main() {
 	}
 	shipper, err := journal_2_logstash.NewShipper(cfg)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Exiting:", err)
 	}
 
-	go shipper.Run()
-	waitShutdown()
-	shipper.Stop()
+	err = shipper.Run()
+	if err != nil {
+		log.Fatal("Exiting:", err)
+	}
 }

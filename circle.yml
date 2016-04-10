@@ -1,3 +1,20 @@
+machine:
+  environment:
+    GOVERSION: 1.6
+    GOPATH: /home/ubuntu/go_workspace
+    GOROOT: /home/ubuntu/go$GOVERSION
+    PATH: /home/ubuntu/go$GOVERSION/bin:$GOPATH/bin:$PATH
+
+dependencies:
+  cache_directories:
+    - ../go_workspace
+    - ../go1.6
+    - vendor
+  override:
+    - make fix_circle_go
+    - make deps
+    - make cover_deps
+
 test:
   override:
     - make test
@@ -12,7 +29,7 @@ deployment:
         commands:
           - gem install package_cloud --no-rdoc --no-ri
           ## build
-          - make rpm
+          - make build_rpm
           ## packagecloud.io yum repos require a distro/version, so we push this rpm to multiple repos:
           ## set PACKAGECLOUD_TOKEN environment variable on circleci.com
           - package_cloud push pantheon/internal/fedora/20 ./*.rpm

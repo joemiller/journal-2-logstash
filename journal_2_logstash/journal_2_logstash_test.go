@@ -59,6 +59,14 @@ func Test_saveCursor(t *testing.T) {
 
 }
 
+func TestMetrics(t *testing.T) {
+	m := newMetrics()
+	s := &JournalShipper{journalMetrics: m}
+
+	s.msgsRecvd.Inc(42)
+	assert.Equal(t, int64(42), s.msgsRecvd.Count())
+}
+
 //func Test_Run(t *testing.T) {
 //	// setup a fake journal, and fake TLS receiver
 //	// test save is called when lastsave>SAVEINTERVAL
