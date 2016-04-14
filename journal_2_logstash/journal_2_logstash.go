@@ -23,11 +23,11 @@ type JournalShipperConfig struct {
 	Debug       bool
 	StateFile   string
 	Socket      string
-	Url         string
+	URL         string
 	Key         string
 	Cert        string
 	Ca          string
-	GraphiteUrl string
+	GraphiteURL string
 }
 
 type JournalShipper struct {
@@ -67,7 +67,7 @@ func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 	}
 
 	// connect to logstash TLS
-	s.logstash, err = logstash.NewClient(s.Url, s.Key, s.Cert, s.Ca)
+	s.logstash, err = logstash.NewClient(s.URL, s.Key, s.Cert, s.Ca)
 	if err != nil {
 		return nil, fmt.Errorf("Error connecting to logstash: %s", err.Error())
 	}
@@ -75,9 +75,9 @@ func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 	// setup periodic metric logging to stderr
 	go metrics.Log(metrics.DefaultRegistry, 60*time.Second, log.New(os.Stderr, "metrics: ", log.Lmicroseconds))
 
-	// also send metrics to graphite if a GraphiteUrl config option was specified
-	if cfg.GraphiteUrl != "" {
-		addr, err := net.ResolveTCPAddr("tcp", cfg.GraphiteUrl)
+	// also send metrics to graphite if a GraphiteURL config option was specified
+	if cfg.GraphiteURL != "" {
+		addr, err := net.ResolveTCPAddr("tcp", cfg.GraphiteURL)
 		if err != nil {
 			return nil, fmt.Errorf("Invalid graphite-url: %s: %s", addr, err)
 		}
