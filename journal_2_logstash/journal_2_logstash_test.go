@@ -1,7 +1,6 @@
 package journal_2_logstash
 
 import (
-	"errors"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -12,17 +11,13 @@ import (
 var journalMessageExample = `{ "__CURSOR" : "s=61821e0261d64e798421262e919e98c2;i=e954abb;b=02af341160dc4db3a323457d05bac86d;m=69a8e78f37b;t=52a6d993c7998;x=152f4cdf1f7a5704", "__REALTIME_TIMESTAMP" : "1454025094232472", "__MONOTONIC_TIMESTAMP" : "7260885021563", "_BOOT_ID" : "02af341160dc4db3a323457d05bac86d", "MESSAGE" :"foo" }`
 var expectedCursor = "s=61821e0261d64e798421262e919e98c2;i=e954abb;b=02af341160dc4db3a323457d05bac86d;m=69a8e78f37b;t=52a6d993c7998;x=152f4cdf1f7a5704"
 
-func Test_cursorFromRawMessage(t *testing.T) {
-	cursor := cursorFromRawMessage([]byte(journalMessageExample))
-	assert.Equal(t, expectedCursor, cursor)
-}
-
-func Test_cursorFromRawMessage_corruptMessage(t *testing.T) {
-	journalMessageExample := `{  "s=61821e0261d64e798421262e919e" }`
-	expectedCursor := ""
-
-	cursor := cursorFromRawMessage([]byte(journalMessageExample))
-	assert.Equal(t, expectedCursor, cursor)
+func Test_logstashEventFromJournal(t *testing.T) {
+	raw := []byte(journalMessageExample)
+	e, err := logstashEventFromJournal(&raw)
+	assert.Nil(t, err)
+	assert.Equal(t, "2016-01-28 23:51:34.000232472 +0000 UTC", e.Timestamp.String())
+	assert.Equal(t, "foo", e.Message)
+	assert.Equal(t, "7260885021563", e.Fields["__MONOTONIC_TIMESTAMP"])
 }
 
 func tempStateFile(t *testing.T) *os.File {
@@ -38,25 +33,22 @@ func Test_saveCursor(t *testing.T) {
 	jtls := &JournalShipper{}
 	jtls.StateFile = stateFile.Name()
 
-	// test 1 - a call to saveCursor() with no message received should return immediately
-	//          with no side effects (ie: the jtls.lastMessage field should be empty/zero-value)
-	err := jtls.saveCursor()
+	// test 1 - a call to saveCursor() empty cursor should return without updating
+	//          the lastStateSave time
+	tsBefore := jtls.lastStateSave
+	err := jtls.saveCursor("")
 	assert.Nil(t, err)
+	assert.Equal(t, tsBefore, jtls.lastStateSave)
 
-	// test 2 - saveCursor() should extract the cursor from jtls.lastMessage and save it to our
-	//          tempfile.
-	jtls.lastMessage = []byte(journalMessageExample)
-	err = jtls.saveCursor()
+	// test 2 - saveCursor() should save the given cursor and update the lastStateSave
+	//          timestamp in the jtls struct.
+	tsBefore = jtls.lastStateSave
+	err = jtls.saveCursor("foo")
 	assert.Nil(t, err)
+	assert.NotEqual(t, tsBefore, jtls.lastStateSave)
 
 	savedValue, _ := readStateFile(jtls.StateFile)
-	assert.Equal(t, savedValue, expectedCursor)
-
-	// test 3 - saveCursor is unable to extract a cursor. Possibly garbled/corrupt log message?
-	jtls.lastMessage = []byte("foobar")
-	err = jtls.saveCursor()
-	assert.Equal(t, err, errors.New("Unable to get cursor from most recent log message."))
-
+	assert.Equal(t, "foo", savedValue)
 }
 
 func TestMetrics(t *testing.T) {

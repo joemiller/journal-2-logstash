@@ -44,8 +44,12 @@ func NewClient(url, keyFile, certFile, caFile string) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) Write(b []byte) (int, error) {
-	return c.writeAndRetry(append(b, '\n'))
+func (c *Client) Write(e *V1Event) (int, error) {
+	bytes, err := e.ToJSON()
+	if err != nil {
+		return 0, err
+	}
+	return c.writeAndRetry(append(bytes, '\n'))
 }
 
 func (c *Client) connect() error {

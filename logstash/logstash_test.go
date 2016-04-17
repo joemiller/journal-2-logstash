@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"testing"
 	"time"
@@ -59,10 +60,14 @@ func setup(t *testing.T) {
 
 func TestWrite(t *testing.T) {
 	setup(t)
+	event := referenceEvent()
 	defer server.Close()
 	defer client.Close()
 
-	client.Write([]byte("pretend this is JSON"))
+	client.Write(event)
 	server.WaitForLines(1, time.Second)
-	assert.True(t, server.Received("pretend this is JSON"))
+	t.Log(server.Lines())
+
+	expected := fmt.Sprintf("{\"@timestamp\":\"%s\",\"@version\":1,\"baz\":\"blah\",\"message\":\"foo\"}", referenceTimeString)
+	assert.True(t, server.Received(expected))
 }
