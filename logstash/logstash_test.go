@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ var (
 	server *tlstest.Server
 )
 
-func makeTlsConfigFromFiles(keyFile, certFile, caFile string) (*tls.Config, error) {
+func makeTLSConfigFromFiles(keyFile, certFile, caFile string) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -41,11 +42,11 @@ func setup(t *testing.T) {
 	var err error
 
 	// setup mock logstash TLS (basic tcp socket) server
-	serverTlsConfig, err := makeTlsConfigFromFiles("../test/fixtures/certs/logstash.key",
+	serverTLSConfig, err := makeTLSConfigFromFiles("../test/fixtures/certs/logstash.key",
 		"../test/fixtures/certs/logstash.crt",
 		"../test/fixtures/certs/ca.crt")
 	assert.Nil(t, err)
-	server, err = tlstest.NewServer(serverTlsConfig)
+	server, err = tlstest.NewServer(serverTLSConfig)
 	assert.Nil(t, err)
 
 	// setup logstash tls client
@@ -59,10 +60,14 @@ func setup(t *testing.T) {
 
 func TestWrite(t *testing.T) {
 	setup(t)
+	event := referenceEvent()
 	defer server.Close()
 	defer client.Close()
 
-	client.Write([]byte("pretend this is JSON"))
+	client.Write(event)
 	server.WaitForLines(1, time.Second)
-	assert.True(t, server.Received("pretend this is JSON"))
+	t.Log(server.Lines())
+
+	expected := fmt.Sprintf("{\"@timestamp\":\"%s\",\"@version\":1,\"extra_field\":\"text here\",\"message\":\"foo\"}", referenceTimeString)
+	assert.True(t, server.Received(expected))
 }
