@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	saveInterval = float64(30) // seconds  // TODO: make this configurable
+	saveInterval = time.Duration(30) * time.Second // seconds  // TODO: make this configurable
 )
 
 type JournalShipperConfig struct {
@@ -226,7 +226,7 @@ func (s *JournalShipper) Run() error {
 			}
 			s.msgsSent.Inc(1)
 
-			if time.Since(s.lastStateSave).Seconds() > saveInterval {
+			if time.Since(s.lastStateSave) > saveInterval {
 				if err := s.saveCursor(event.Fields["__CURSOR"]); err != nil {
 					return fmt.Errorf("Error saving cursor: %s", err)
 				}
