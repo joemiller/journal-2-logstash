@@ -74,8 +74,8 @@ func TestMetrics(t *testing.T) {
 	m := newMetrics()
 	s := &JournalShipper{journalMetrics: m}
 
-	s.msgsRecvd.Inc(42)
-	assert.Equal(t, int64(42), s.msgsRecvd.Count())
+	s.msgsRead.Inc(42)
+	assert.Equal(t, int64(42), s.msgsRead.Count())
 }
 
 //func Test_Run(t *testing.T) {

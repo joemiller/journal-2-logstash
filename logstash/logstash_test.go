@@ -58,11 +58,15 @@ func setup(t *testing.T) {
 	assert.NotNil(t, client)
 }
 
+func teardown() {
+	client.Close()
+	server.Close()
+}
+
 func TestWrite(t *testing.T) {
 	setup(t)
+	defer teardown()
 	event := referenceEvent()
-	defer server.Close()
-	defer client.Close()
 
 	client.Write(event)
 	server.WaitForLines(1, time.Second)
@@ -70,4 +74,18 @@ func TestWrite(t *testing.T) {
 
 	expected := fmt.Sprintf("{\"@timestamp\":\"%s\",\"@version\":1,\"extra_field\":\"text here\",\"message\":\"foo\"}", referenceTimeString)
 	assert.True(t, server.Received(expected))
+}
+
+func TestPeriodicDisconnect(t *testing.T) {
+	setup(t)
+	defer teardown()
+	event := referenceEvent()
+
+	// set connection timestamp to 5 minutes in the past
+	initialTime := time.Now().Add(-300 * time.Second)
+	client.lastConnectTime = initialTime
+
+	// upon next Write(), the connection should be disconnected / reconnected, causing the lastConnectTime to be updated
+	client.Write(event)
+	assert.NotEqual(t, initialTime, client.lastConnectTime)
 }

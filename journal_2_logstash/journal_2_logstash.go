@@ -9,8 +9,10 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/cyberdelia/go-metrics-graphite"
 	"github.com/pantheon-systems/journal-2-logstash/journal"
 	"github.com/pantheon-systems/journal-2-logstash/logstash"
 	"github.com/rcrowley/go-metrics"
@@ -40,9 +42,10 @@ type JournalShipper struct {
 }
 
 type journalMetrics struct {
-	msgsRecvd metrics.Counter
-	msgsSent  metrics.Counter
-	parseFail metrics.Counter
+	msgsRead      metrics.Counter
+	msgsSent      metrics.Counter
+	parseFail     metrics.Counter
+	secondsBehind metrics.GaugeFloat64
 }
 
 func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
@@ -82,8 +85,13 @@ func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Invalid graphite-url: %s: %s", addr, err)
 		}
-		// TODO: we're going to need hostnames on these metrics since this agent will run on a lot of nodes.
-		//go graphite.Graphite(metrics.DefaultRegistry, 60*time.Second, "journal-2-logstash", addr)
+		hostname, err := shortHostname()
+		if err != nil {
+			log.Printf("Unable to determine local hostname. Disabling graphite metrics. %s", err)
+		} else {
+			metricPath := fmt.Sprintf("servers.%s.journal-2-logstash", hostname) // TODO: expose path to configuration flags
+			go graphite.Graphite(metrics.DefaultRegistry, 60*time.Second, metricPath, addr)
+		}
 	}
 
 	return s, nil
@@ -91,14 +99,28 @@ func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 
 func newMetrics() journalMetrics {
 	m := journalMetrics{
-		msgsRecvd: metrics.NewCounter(),
-		msgsSent:  metrics.NewCounter(),
-		parseFail: metrics.NewCounter(),
+		msgsRead:      metrics.NewCounter(),
+		msgsSent:      metrics.NewCounter(),
+		parseFail:     metrics.NewCounter(),
+		secondsBehind: metrics.NewGaugeFloat64(),
 	}
-	metrics.Register("messages_received", m.msgsRecvd)
+	metrics.Register("messages_read", m.msgsRead)
 	metrics.Register("messages_sent", m.msgsSent)
 	metrics.Register("message_parse_fail", m.parseFail)
+	metrics.Register("seconds_behind", m.secondsBehind)
 	return m
+}
+
+func shortHostname() (string, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", err
+	}
+	index := strings.Index(hostname, ".")
+	if index > 0 {
+		return hostname[:index], nil
+	}
+	return hostname, nil
 }
 
 func readStateFile(stateFile string) (string, error) {
@@ -116,10 +138,11 @@ func (s *JournalShipper) saveCursor(cursor string) error {
 	if cursor == "" {
 		return nil
 	}
-
-	log.Printf("Saving cursor to %s: %v", s.StateFile, cursor)
+	if s.Debug {
+		log.Printf("Saving cursor to %s: %v", s.StateFile, cursor)
+	}
 	if err := writeStateFile(s.StateFile, cursor); err != nil {
-		return fmt.Errorf("Unable to write to state file: %s", err.Error())
+		return fmt.Errorf("Unable to write state file: %s", err.Error())
 	}
 	s.lastStateSave = time.Now()
 	return nil
@@ -199,7 +222,7 @@ func (s *JournalShipper) Run() error {
 		return fmt.Errorf("Error reading from systemd-journal-gatewayd: %s", err.Error())
 	}
 
-	// loop forever receiving messages from s-j-gatewayd and relaying them to logstash
+	// loop forever reading messages from s-j-gatewayd and relaying them to logstash
 	// return with error if we lose connection to the gateway or run into errors sending to logstash
 	for {
 		select {
@@ -212,7 +235,7 @@ func (s *JournalShipper) Run() error {
 			if s.Debug {
 				log.Printf("[DEBUG] Received from journal: %s", rawMessage)
 			}
-			s.msgsRecvd.Inc(1)
+			s.msgsRead.Inc(1)
 
 			event, err := logstashEventFromJournal(&rawMessage)
 			if err != nil {
@@ -225,6 +248,7 @@ func (s *JournalShipper) Run() error {
 				return fmt.Errorf("Error writing to logstash: %s", err)
 			}
 			s.msgsSent.Inc(1)
+			s.secondsBehind.Update(time.Since(event.Timestamp).Seconds())
 
 			if time.Since(s.lastStateSave) > saveInterval {
 				if err := s.saveCursor(event.Fields["__CURSOR"]); err != nil {
