@@ -6,16 +6,19 @@ import (
 	"errors"
 	"io/ioutil"
 	"log"
+	"time"
 
 	"github.com/cenkalti/backoff"
 )
 
 type Client struct {
-	conn   *tls.Conn
-	config *tls.Config
-	url    string
+	conn            *tls.Conn
+	config          *tls.Config
+	lastConnectTime time.Time
+	url             string
 }
 
+// NewClient returns a Client object
 func NewClient(url, keyFile, certFile, caFile string) (*Client, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -68,10 +71,13 @@ func (c *Client) connect() error {
 	if err != nil {
 		return err
 	}
+	log.Printf("Connected to logstash server: %s (%s)", c.url, conn.RemoteAddr())
 	c.conn = conn
+	c.lastConnectTime = time.Now()
 	return nil
 }
 
+// Close closes an active connection to the logstash server.
 func (c *Client) Close() {
 	if c.conn != nil {
 		c.conn.Close()
@@ -82,8 +88,16 @@ func (c *Client) write(b []byte) (int, error) {
 	return c.conn.Write(b)
 }
 
+func (c *Client) periodicDisconnect() {
+	if time.Since(c.lastConnectTime) > time.Duration(60*time.Second) {
+		c.Close()
+	}
+}
+
 // TODO: we have a retry in the connect() func, should we also retry in the write path?
 func (c *Client) writeAndRetry(b []byte) (int, error) {
+	c.periodicDisconnect()
+
 	if c.conn != nil {
 		if n, err := c.write(b); err == nil {
 			return n, err
