@@ -10,7 +10,7 @@ import (
 
 var journalMessageExample = `{ "__CURSOR" : "s=61821e0261d64e798421262e919e98c2;i=e954abb;b=02af341160dc4db3a323457d05bac86d;m=69a8e78f37b;t=52a6d993c7998;x=152f4cdf1f7a5704", "__REALTIME_TIMESTAMP" : "1454025094232472", "__MONOTONIC_TIMESTAMP" : "7260885021563", "_BOOT_ID" : "02af341160dc4db3a323457d05bac86d", "MESSAGE" :"foo" }`
 
-var journalMessageBytesMessageExample = `{ "__CURSOR" : "s=61821e0261d64e798421262e919e98c2;i=e954abb;b=02af341160dc4db3a323457d05bac86d;m=69a8e78f37b;t=52a6d993c7998;x=152f4cdf1f7a5704", "__REALTIME_TIMESTAMP" : "1454025094232472", "__MONOTONIC_TIMESTAMP" : "7260885021563", "_BOOT_ID" : "02af341160dc4db3a323457d05bac86d", "MESSAGE" :[ 102, 111, 111 ] }`
+var journalMessageBytesMessageExample = `{ "__CURSOR" : "s=61821e0261d64e798421262e919e98c2;i=e954abb;b=02af341160dc4db3a323457d05bac86d;m=69a8e78f37b;t=52a6d993c7998;x=152f4cdf1f7a5704", "__REALTIME_TIMESTAMP" : "1454025094232472", "__MONOTONIC_TIMESTAMP" : "7260885021563", "_BOOT_ID" : "02af341160dc4db3a323457d05bac86d", "COMMAND" : [ 102, 111, 111 ], "MESSAGE" : [ 102, 111, 111 ] }`
 
 var expectedCursor = "s=61821e0261d64e798421262e919e98c2;i=e954abb;b=02af341160dc4db3a323457d05bac86d;m=69a8e78f37b;t=52a6d993c7998;x=152f4cdf1f7a5704"
 
@@ -30,6 +30,7 @@ func Test_logstashEventFromJournal__message_as_byte_array(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "2016-01-28 23:51:34.000232472 +0000 UTC", e.Timestamp.String())
 	assert.Equal(t, "foo", e.Message)
+	assert.Equal(t, "foo", e.Fields["COMMAND"])
 	assert.Equal(t, "7260885021563", e.Fields["__MONOTONIC_TIMESTAMP"])
 }
 

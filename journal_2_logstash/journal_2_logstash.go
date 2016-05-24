@@ -172,14 +172,16 @@ func logstashEventFromJournal(raw *[]byte) (*logstash.V1Event, error) {
 				return nil, fmt.Errorf("Unable to parse __REALTIME_TIMESTAMP from Journal message: %s", err)
 			}
 			e.Timestamp = timeFromJournalInt(val)
-		case "MESSAGE":
-			err, s := parseLogstashMessageField(v)
-			if err != nil {
-				return nil, fmt.Errorf("Unable to parse MESSAGE from Journal message: %s", err)
-			}
-			e.Message = s
 		default:
-			e.Fields[k] = v.(string)
+			err, s := parseJournalValue(v)
+			if err != nil {
+				return nil, fmt.Errorf("Unable to parse %s field: %s", k, err)
+			}
+			if k == "MESSAGE" {
+				e.Message = s
+			} else {
+				e.Fields[k] = s
+			}
 		}
 	}
 	return e, nil
@@ -196,12 +198,10 @@ func timeFromJournalInt(t int64) time.Time {
 	return time.Unix(secs, ms).UTC()
 }
 
-// parseLogstashMessageField expects the contents of the "MESSAGE" field from a JSON-serialized
-// journal message as an interface{} such as generated from json.Unmarshal(). This is necessary
-// because the journal can send multiple types in the MESSAGE field: a) a string or b) an array
-// of bytes :(
+// parseJournalValue expects an interface{} containing a field value from the journal which
+// can be either a string or array of bytes that will be converted into a string.
 //
-func parseLogstashMessageField(msg interface{}) (error, string) {
+func parseJournalValue(msg interface{}) (error, string) {
 	switch msg := msg.(type) {
 	case string:
 		return nil, msg
