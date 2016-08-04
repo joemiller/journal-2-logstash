@@ -1,3 +1,10 @@
+## 0.4.0 (2016-08-05)
+
+* Added write timeout option `-o`. Default is 10 seconds. This should help with occasional
+  issues observed in previous versions where journal-2-logstash would seemingly hang and
+  cease sending logs to Logstash. This was observable by increasing lag_seconds metrics
+  and the cessation of the period reconnects to the Logstash server.
+
 ## 0.3.1 (2016-05-23)
 
 * Handle cases when the journal will encode field values as byte arrays for fields other than the `MESSAGE` field.

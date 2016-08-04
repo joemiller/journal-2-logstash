@@ -38,7 +38,7 @@ func makeTLSConfigFromFiles(keyFile, certFile, caFile string) (*tls.Config, erro
 	return tlsConfig, nil
 }
 
-func setup(t *testing.T) {
+func setup(t *testing.T, timeout time.Duration) {
 	var err error
 
 	// setup mock logstash TLS (basic tcp socket) server
@@ -53,7 +53,8 @@ func setup(t *testing.T) {
 	client, err = NewClient(server.Address(),
 		"../test/fixtures/certs/logger.key",
 		"../test/fixtures/certs/logger.crt",
-		"../test/fixtures/certs/ca.crt")
+		"../test/fixtures/certs/ca.crt",
+		timeout)
 	assert.Nil(t, err)
 	assert.NotNil(t, client)
 }
@@ -64,7 +65,7 @@ func teardown() {
 }
 
 func TestWrite(t *testing.T) {
-	setup(t)
+	setup(t, time.Duration(5*time.Second))
 	defer teardown()
 	event := referenceEvent()
 
@@ -76,8 +77,18 @@ func TestWrite(t *testing.T) {
 	assert.True(t, server.Received(expected))
 }
 
+func TestWriteTimeout(t *testing.T) {
+	setup(t, time.Duration(-5*time.Second))
+	defer teardown()
+	event := referenceEvent()
+
+	_, err := client.Write(event)
+	t.Log(err)
+	assert.NotNil(t, err)
+}
+
 func TestPeriodicDisconnect(t *testing.T) {
-	setup(t)
+	setup(t, time.Duration(5*time.Second))
 	defer teardown()
 	event := referenceEvent()
 
