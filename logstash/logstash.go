@@ -11,15 +11,18 @@ import (
 	"github.com/cenkalti/backoff"
 )
 
+// Client is a simple logstash TLS client that can communicate with the logstash-input-tcp plugin
+// using TLS certificates for both client and server.
 type Client struct {
 	conn            *tls.Conn
 	config          *tls.Config
 	lastConnectTime time.Time
 	url             string
+	timeout         time.Duration
 }
 
 // NewClient returns a Client object
-func NewClient(url, keyFile, certFile, caFile string) (*Client, error) {
+func NewClient(url, keyFile, certFile, caFile string, timeout time.Duration) (*Client, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -38,8 +41,9 @@ func NewClient(url, keyFile, certFile, caFile string) (*Client, error) {
 	}
 
 	c := &Client{
-		url:    url,
-		config: tlsConfig,
+		url:     url,
+		config:  tlsConfig,
+		timeout: timeout,
 	}
 	if err := c.connect(); err != nil {
 		return nil, err
@@ -85,6 +89,7 @@ func (c *Client) Close() {
 }
 
 func (c *Client) write(b []byte) (int, error) {
+	c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
 	return c.conn.Write(b)
 }
 

@@ -31,6 +31,7 @@ type JournalShipperConfig struct {
 	Cert        string
 	Ca          string
 	GraphiteURL string
+	Timeout     time.Duration
 }
 
 type JournalShipper struct {
@@ -71,7 +72,7 @@ func NewShipper(cfg JournalShipperConfig) (*JournalShipper, error) {
 	}
 
 	// connect to logstash TLS
-	s.logstash, err = logstash.NewClient(s.URL, s.Key, s.Cert, s.Ca)
+	s.logstash, err = logstash.NewClient(s.URL, s.Key, s.Cert, s.Ca, s.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("Error connecting to logstash: %s", err.Error())
 	}
