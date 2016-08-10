@@ -37,6 +37,7 @@ type JournalShipperConfig struct {
 type JournalShipper struct {
 	JournalShipperConfig
 	lastStateSave time.Time
+	lastSent      time.Time
 	journal       *journal.Journal // TODO: rename this to journal.Follower() ?
 	logstash      *logstash.Client
 	journalMetrics
@@ -174,7 +175,7 @@ func logstashEventFromJournal(raw *[]byte) (*logstash.V1Event, error) {
 			}
 			e.Timestamp = timeFromJournalInt(val)
 		default:
-			err, s := parseJournalValue(v)
+			s, err := parseJournalValue(v)
 			if err != nil {
 				return nil, fmt.Errorf("Unable to parse %s field: %s", k, err)
 			}
@@ -202,26 +203,42 @@ func timeFromJournalInt(t int64) time.Time {
 // parseJournalValue expects an interface{} containing a field value from the journal which
 // can be either a string or array of bytes that will be converted into a string.
 //
-func parseJournalValue(msg interface{}) (error, string) {
+func parseJournalValue(msg interface{}) (string, error) {
 	switch msg := msg.(type) {
 	case string:
-		return nil, msg
+		return msg, nil
 	case []interface{}:
 		bytes := make([]byte, len(msg))
 		for i := range msg {
 			bytes[i] = byte(msg[i].(float64))
 		}
-		return nil, string(bytes)
+		return string(bytes), nil
 	default:
-		return errors.New("Journal 'MESSAGE' field of unknown type"), ""
+		return "", errors.New("Journal 'MESSAGE' field of unknown type")
 	}
 }
 
+// updateLagMetric() should be spawned in a goroutine. It will update
+// the secondsBehind metric based on the timestamp of the last-successfully
+// sent log message. This metric can be used to detect broken or stalled clients.
+func (s *JournalShipper) updateLagMetric() {
+	tick := time.Tick(1 * time.Second)
+	for {
+		select {
+		case <-tick:
+			s.secondsBehind.Update(time.Since(s.lastSent).Seconds())
+		}
+	}
+}
+
+// Run is the main loop and will run until an error occurs.
 func (s *JournalShipper) Run() error {
 	logsCh, err := s.journal.Follow()
 	if err != nil {
 		return fmt.Errorf("Error reading from systemd-journal-gatewayd: %s", err.Error())
 	}
+
+	go s.updateLagMetric()
 
 	// loop forever reading messages from s-j-gatewayd and relaying them to logstash
 	// return with error if we lose connection to the gateway or run into errors sending to logstash
@@ -249,7 +266,7 @@ func (s *JournalShipper) Run() error {
 				return fmt.Errorf("Error writing to logstash: %s", err)
 			}
 			s.msgsSent.Inc(1)
-			s.secondsBehind.Update(time.Since(event.Timestamp).Seconds())
+			s.lastSent = event.Timestamp
 
 			if time.Since(s.lastStateSave) > saveInterval {
 				if err := s.saveCursor(event.Fields["__CURSOR"]); err != nil {
