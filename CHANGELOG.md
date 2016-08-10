@@ -1,3 +1,9 @@
+## 0.4.1 (2016-08-10)
+
+* Move the updating of lag_seconds metric into a go-routine so that it can be updated
+  when the main loop is hung, improving visibility of instances that may become
+  hung.
+
 ## 0.4.0 (2016-08-05)
 
 * Added write timeout option `-o`. Default is 10 seconds. This should help with occasional
